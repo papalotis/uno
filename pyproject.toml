@@ -1,0 +1,35 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "uno"
+authors = [{ name = "Panagiotis Karagiannis", email = "papalotis1@gmail.com" }]
+readme = "README.md"
+license = { file = "LICENSE" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+dynamic = ["version", "description"]
+
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "pytest-cov"]
+extra = ["matplotlib", "tqdm"]
+
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["COM812", "T201", "EM102", "EM101", "TRY003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**.py" = ["D", "S101", "PLR2004", "ANN", "SLF001"]
+
+[tool.pyright]
+# Strict for all
+strict = ["**/*.py"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["tests"]
