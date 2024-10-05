@@ -23,15 +23,6 @@ from uno.logger import create_logger
 logger = create_logger(__name__, level=logging.INFO)
 
 
-VALUE_POWER: dict[CardValue, int] = {key_value: 0 for key_value in list(CardValue)[: CardValue.SKIP]} | {
-    CardValue.REVERSE: 1,
-    CardValue.SKIP: 2,
-    CardValue.PICK_COLOR: 3,
-    CardValue.DRAW_2: 4,
-    CardValue.DRAW_4: 5,
-}
-
-
 @dataclass(frozen=True)
 class Card:
     """An Uno card which has a color and a value."""
@@ -100,25 +91,30 @@ class Card:
 
         # we are not in a draw chain
         if self.is_color_card():
-            # if we are a color card, we can play on top of any color card
-            # or any card with the same value as the "assigned" color of the wild card
-            if down_card.is_color_card():
-                if down_wildcard_color is not None:
-                    raise ValueError("down_wildcard_color should be None when down_card is a color card")
-                # either we have the same color or the same value
-                return self.color == down_card.color or self.value == down_card.value
-            if down_card.is_wild_card():
-                if down_wildcard_color is None:
-                    raise ValueError("down_wildcard_color should not be None when down_card is a wild card")
-                if down_wildcard_color == CardColor.WILDCARD:
-                    raise ValueError("down_wildcard_color should not be WILDCARD")
-                return self.color == down_wildcard_color
+            return self._can_be_played_if_color_card(down_card, down_wildcard_color)
 
         if self.is_wild_card():
             # we can always play a wild card no matter what the down card is
             return True
 
         raise AssertionError("Unreachable code")
+
+    def _can_be_played_if_color_card(self, down_card: Card, down_wildcard_color: CardColor | None) -> bool:
+        # if we are a color card, we can play on top of any color card
+        # or any card with the same value as the "assigned" color of the wild card
+        if down_card.is_color_card():
+            if down_wildcard_color is not None:
+                raise ValueError("down_wildcard_color should be None when down_card is a color card")
+            # either we have the same color or the same value
+            return self.color == down_card.color or self.value == down_card.value
+        if down_card.is_wild_card():
+            if down_wildcard_color is None:
+                raise ValueError("down_wildcard_color should not be None when down_card is a wild card")
+            if down_wildcard_color == CardColor.WILDCARD:
+                raise ValueError("down_wildcard_color should not be WILDCARD")
+            return self.color == down_wildcard_color
+
+        raise AssertionError("No other card types remaining")
 
 
 @dataclass
@@ -194,6 +190,18 @@ class Player(ABC):
 class BasicAIPlayer(Player):
     """A basic AI player in the Uno game."""
 
+    def card_value_power(self, card: Card) -> int:
+        """Define a basic value for each card."""
+        value_power = {key_value: 0 for key_value in list(CardValue)[: CardValue.SKIP]} | {
+            CardValue.REVERSE: 1,
+            CardValue.SKIP: 2,
+            CardValue.PICK_COLOR: 3,
+            CardValue.DRAW_2: 4,
+            CardValue.DRAW_4: 5,
+        }
+
+        return value_power[card.value]
+
     @override
     def get_card_to_play(
         self, top_card: Card, top_card_wildcard_color: CardColor | None = None, *, in_draw_chain: bool
@@ -208,14 +216,21 @@ class BasicAIPlayer(Player):
             logger.debug("%s doesnt have any cards to play", self.name)
             return None, None
 
-        best_card = max(cards_that_can_be_played, key=lambda card: VALUE_POWER[card.value])
+        best_card = max(cards_that_can_be_played, key=self.card_value_power)
 
-        color_wild = None
-        if best_card.is_wild_card():
-            colors = [card.color for card in self.hand if not card.is_wild_card()]
-            color_wild = CardColor.RED if len(colors) == 0 else Counter(colors).most_common()[0][0]
+        color_wild = self._wildcard_color(best_card)
 
         return best_card, color_wild
+
+    def _wildcard_color(self, best_card: Card) -> CardColor | None:
+        """Select the color to make the wildcard if playing a wildcard."""
+        if not best_card.is_wild_card():
+            return None
+
+        colors = [card.color for card in self.hand if not card.is_wild_card()]
+        return (
+            random.choice(CardColor.non_wildcard_colors()) if len(colors) == 0 else Counter(colors).most_common()[0][0]
+        )
 
 
 @dataclass

@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Self
 
 
 class CardColor(int, Enum):
     """The colors of the Uno cards."""
 
     RED, BLUE, GREEN, YELLOW, WILDCARD = range(5)
+
+    @classmethod
+    def non_wildcard_colors(cls) -> tuple[Self, ...]:
+        """Tuple of non wildcard colors."""
+        return tuple(cls)[:-1]
 
 
 class CardValue(int, Enum):
