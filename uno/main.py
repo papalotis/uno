@@ -99,19 +99,25 @@ class Card:
 
         raise AssertionError("Unreachable code")
 
+    def _validate_down_card_with_down_wildcard_color(
+        self, down_card: Card, down_wildcard_color: CardColor | None
+    ) -> None:
+        if down_wildcard_color == CardColor.WILDCARD:
+            raise ValueError("down_wildcard_color should not be WILDCARD")
+
+        if down_card.is_color_card() and down_wildcard_color is not None:
+            raise ValueError("down_wildcard_color should be None when down_card is a color card")
+
+        if down_card.is_wild_card() and down_wildcard_color is None:
+            raise ValueError("down_wildcard_color should not be None when down_card is a wild card")
+
     def _can_be_played_if_color_card(self, down_card: Card, down_wildcard_color: CardColor | None) -> bool:
         # if we are a color card, we can play on top of any color card
         # or any card with the same value as the "assigned" color of the wild card
+        self._validate_down_card_with_down_wildcard_color(down_card, down_wildcard_color)
         if down_card.is_color_card():
-            if down_wildcard_color is not None:
-                raise ValueError("down_wildcard_color should be None when down_card is a color card")
-            # either we have the same color or the same value
             return self.color == down_card.color or self.value == down_card.value
         if down_card.is_wild_card():
-            if down_wildcard_color is None:
-                raise ValueError("down_wildcard_color should not be None when down_card is a wild card")
-            if down_wildcard_color == CardColor.WILDCARD:
-                raise ValueError("down_wildcard_color should not be WILDCARD")
             return self.color == down_wildcard_color
 
         raise AssertionError("No other card types remaining")
@@ -139,7 +145,7 @@ class Deck:
 
     def draw_random_card(self) -> Card:
         """Draw a random card and remove it from the deck."""
-        random_card = random.choice(self.cards)  # noqa: S311
+        random_card = random.choice(self.cards)
         self.remove_card(random_card)
         return random_card
 
@@ -332,13 +338,7 @@ class GameManager:
 
         current_player.remove_card_from_player(card_player_wants_to_play)
 
-        if card_player_wants_to_play.value.is_draw_value():
-            # A draw card was played, the next player must draw 2 or 4 cards
-            self.draw_chain.append(card_player_wants_to_play)
-
-        if card_player_wants_to_play.value == CardValue.REVERSE:
-            # A reverse card was played, the direction of play is reversed
-            self.play_direction = 1 if self.play_direction == -1 else -1
+        self._apply_special_card_effect(card_player_wants_to_play)
 
         message_card_wants_to_play = (
             str(card_player_wants_to_play)
@@ -353,6 +353,18 @@ class GameManager:
 
         logger.debug(message)
         return color_for_wildcard
+
+    def _apply_special_card_effect(self, card_player_wants_to_play: Card) -> None:
+        if card_player_wants_to_play.value.is_draw_value():
+            # A draw card was played, the next player must draw 2 or 4 cards
+            self.draw_chain.append(card_player_wants_to_play)
+
+        if card_player_wants_to_play.value == CardValue.REVERSE:
+            # A reverse card was played, the direction of play is reversed
+            self.play_direction = self.play_direction * -1
+
+        if card_player_wants_to_play.value == CardValue.SKIP:
+            self.next_round_is_skip = True
 
     def play_one_round(self) -> bool:
         """Play one round of the game. Raise a GameIsOverError if the game is already over."""
@@ -376,9 +388,6 @@ class GameManager:
                 # player played a card and we have validated that the play is valid, add the card to the discard pile
                 self.discard_pile.append(card_player_wants_to_play)
 
-                if card_player_wants_to_play.value == CardValue.SKIP:
-                    self.next_round_is_skip = True
-
             self.temporary_top_card_color = temporary_top_card_color
 
         # Move to the next player
@@ -401,49 +410,56 @@ class GameManager:
     def validate_card_play(
         self, current_player: Player, card_player_wants_to_play: Card, color_for_wildcard: CardColor | None
     ) -> None:
-        """Check if the card the player wants to play is valid.
+        """Check if the card the player wants to play is valid."""
+        self._validate_card_is_valid(card_player_wants_to_play)
+        self._validate_color_for_wildcard(current_player, card_player_wants_to_play, color_for_wildcard)
+        self._validate_card_in_hand(current_player, card_player_wants_to_play)
+        self._validate_card_can_be_played(current_player, card_player_wants_to_play)
+        self._validate_wildcard_color_specification(current_player, card_player_wants_to_play, color_for_wildcard)
 
-        A ValueError is raised if the card is not valid.
-        """
-        card_player_wants_to_play.raise_not_valid()
+    def _validate_card_is_valid(self, card: Card) -> None:
+        """Raise an error if the card is not valid."""
+        card.raise_not_valid()
 
-        # No matter what the new color, it can never be a wild card
-        # something has gone really wrong if this happens
+    def _validate_color_for_wildcard(
+        self, current_player: Player, card: Card, color_for_wildcard: CardColor | None
+    ) -> None:
+        """Check if the color for a wildcard is valid."""
         if color_for_wildcard == CardColor.WILDCARD:
             raise PlayValidationError(
-                f"Player {current_player} wants to play a wild card {card_player_wants_to_play} with an invalid color"
-                f" {color_for_wildcard}"
+                f"Player {current_player} wants to play a wild card {card} with an invalid color {color_for_wildcard}"
             )
 
-        if card_player_wants_to_play not in current_player.hand:
-            # Player wants to play a card they do not have
-
+    def _validate_card_in_hand(self, current_player: Player, card: Card) -> None:
+        """Check if the player has the card in their hand."""
+        if card not in current_player.hand:
             raise PlayValidationError(
-                f"Player {current_player} wants to play card {card_player_wants_to_play} they do not have in their hand"
+                f"Player {current_player} wants to play card {card} they do not have in their hand"
                 f" {current_player.hand}"
             )
 
-        if not card_player_wants_to_play.can_be_played_on_top_of_other(
+    def _validate_card_can_be_played(self, current_player: Player, card: Card) -> None:
+        """Check if the card can be played on top of the current top card."""
+        if not card.can_be_played_on_top_of_other(
             self.top_card, self.temporary_top_card_color, in_draw_chain=len(self.draw_chain) > 0
         ):
-            # Player wants to play an invalid card
             raise PlayValidationError(
-                f"Player {current_player} wants to play invalid card {card_player_wants_to_play} on top of"
-                f" {self.top_card} with {self.draw_chain=}"
+                f"Player {current_player} wants to play invalid card {card} on top of {self.top_card} with"
+                f" {self.draw_chain=}"
             )
 
-        # If the player wants to play a wild card, they must specify a color
-        # But if the player does not want to play a wild card, they are not allowed to
-        # specify a color
-        if color_for_wildcard is None and card_player_wants_to_play.is_wild_card():
+    def _validate_wildcard_color_specification(
+        self, current_player: Player, card: Card, color_for_wildcard: CardColor | None
+    ) -> None:
+        """Ensure the correct behavior for wild cards and color specifications."""
+        if color_for_wildcard is None and card.is_wild_card():
             raise PlayValidationError(
-                f"Player {current_player} wants to play a wild card {card_player_wants_to_play} without specifying a"
-                " color"
+                f"Player {current_player} wants to play a wild card {card} without specifying a color"
             )
-        if color_for_wildcard is not None and not card_player_wants_to_play.is_wild_card():
+        if color_for_wildcard is not None and not card.is_wild_card():
             raise PlayValidationError(
-                f"Player {current_player} wants to play a non-wild card {card_player_wants_to_play} with a specified"
-                f" color {color_for_wildcard}"
+                f"Player {current_player} wants to play a non-wild card {card} with a specified color"
+                f" {color_for_wildcard}"
             )
 
     def _refill_deck(self) -> None:

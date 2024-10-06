@@ -1,7 +1,5 @@
 """Tests for the uno package."""
 
-from unittest.mock import patch
-
 import pytest
 
 from uno.enums import CardColor, CardValue
