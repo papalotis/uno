@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
 from itertools import product
-from typing import Self, override
+from typing import Any, Iterable, Self, TypeVar, override
 
 from uno.enums import CardColor, CardValue
 from uno.errors import (
@@ -19,6 +19,16 @@ from uno.errors import (
     SpecifiedColorButNoCardError,
 )
 from uno.logger import create_logger
+
+T = TypeVar("T")
+
+try:
+    from tqdm import tqdm
+except ImportError:
+
+    def tqdm(iterable: Iterable[T], *args: Any, **kwargs: Any) -> Iterable[T]:  # noqa: D103 ARG001 ANN401
+        return iterable
+
 
 logger = create_logger(__name__, level=logging.INFO)
 
@@ -198,7 +208,7 @@ class BasicAIPlayer(Player):
 
     def card_value_power(self, card: Card) -> int:
         """Define a basic value for each card."""
-        value_power = {key_value: 0 for key_value in list(CardValue)[: CardValue.SKIP]} | {
+        value_power = {key_value: 0 for key_value in list(CardValue)[: CardValue.NINE + 1]} | {
             CardValue.REVERSE: 1,
             CardValue.SKIP: 2,
             CardValue.PICK_COLOR: 3,
@@ -549,7 +559,7 @@ def _main() -> None:
     """Run a demo game."""
     number_of_round_for_each_seed: list[int] = []
 
-    number_of_round_for_each_seed = [play_game_with_seed(seed) for seed in range(10000)]
+    number_of_round_for_each_seed = [play_game_with_seed(seed) for seed in tqdm(range(10000))]
 
     logger.info("All games have finished")
     average_rounds = sum(number_of_round_for_each_seed) / len(number_of_round_for_each_seed)
