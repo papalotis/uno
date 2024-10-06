@@ -549,7 +549,7 @@ class GameManager:
 def play_game_with_seed(seed: int) -> int:
     """Simulate a game of UNO with a given random seed."""
     players: list[Player] = [BasicAIPlayer(name) for name in ["Alice", "Bob", "Charlie", "David", "Eve", "Frank"]]
-    game_manager = GameManager(players, seed=seed, show_plot_of_number_of_cards_per_round=False, round_limit=100_000)
+    game_manager = GameManager(players, seed=seed, show_plot_of_number_of_cards_per_round=False)
     game_manager.play_game()
 
     return game_manager.round_number
